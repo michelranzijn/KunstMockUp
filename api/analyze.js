@@ -14,18 +14,17 @@ export default async function handler(req, res) {
     "Analyseer deze foto en geef 5 tot 7 concrete aanbevelingen.",
     "Kijk breed: kunstpresentatie (plaatsing, hoogte, groepering, verlichting) EN inrichting (meubels, planten, opruiming, kleur, balans).",
     "",
-    "BELANGRIJK: Gebruik in de tekstvelden GEEN aanhalingstekens, apostroffen of speciale tekens. Schrijf gewoon lopende tekst zonder leestekens die JSON kunnen breken.",
-    "",
-    "Geef je antwoord ALLEEN als geldig JSON, geen markdown, geen uitleg. Formaat:",
-    "{\"annotations\":[{\"id\":1,\"title\":\"Titel zonder aanhalingstekens\",\"advice\":\"Advies zonder apostroffen of aanhalingstekens.\",\"category\":\"kunst\",\"x\":0.45,\"y\":0.30,\"arrow_to_x\":0.55,\"arrow_to_y\":0.25}]}",
+    "Geef je antwoord ALLEEN als geldig JSON. Geen markdown, geen uitleg, geen apostroffen in de tekst.",
+    "Formaat: {\"annotations\":[{\"id\":1,\"title\":\"Titel\",\"advice\":\"Advies\",\"category\":\"kunst\",\"x\":0.45,\"y\":0.30,\"arrow_to_x\":0.55,\"arrow_to_y\":0.25}]}",
     "",
     "Regels:",
     "- category is kunst of inrichting",
-    "- x en y zijn de labelposities (0.0=links/boven, 1.0=rechts/onder)",
-    "- arrow_to_x en arrow_to_y wijzen naar de exacte plek in de foto",
-    "- Spreid de labels over de foto, voorkom overlap",
+    "- Geen apostrof of aanhalingsteken in title of advice",
+    "- x/y zijn labelposities (0.0=links/boven, 1.0=rechts/onder)",
+    "- arrow_to_x/y wijst naar de exacte plek in de foto",
+    "- Spreid labels, voorkom overlap",
     "- Schrijf in het Nederlands",
-    "- Retourneer ALLEEN de JSON, niets anders"
+    "- Retourneer ALLEEN de JSON"
   ].join("\n");
 
   try {
@@ -38,7 +37,7 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify({
         model: "claude-sonnet-4-5",
-        max_tokens: 1000,
+        max_tokens: 1200,
         messages: [{
           role: "user",
           content: [
@@ -54,22 +53,47 @@ export default async function handler(req, res) {
 
     const text = data.content?.find(b => b.type === 'text')?.text || '';
 
-    // Extract JSON robustly
+    // Extract the JSON object
     const match = text.match(/\{[\s\S]*\}/);
-    if (!match) return res.status(500).json({ error: 'Geen geldig JSON in response' });
+    if (!match) return res.status(500).json({ error: 'Geen JSON gevonden in response' });
 
-    // Sanitize: remove control characters that break JSON
-    const sanitized = match[0]
-      .replace(/[\u0000-\u001F\u007F]/g, ' ')  // control chars
-      .replace(/\t/g, ' ')                       // tabs
-      .replace(/\r?\n/g, ' ');                   // newlines inside strings
+    let raw = match[0];
 
+    // Fix string values only: sanitize inside quoted strings
+    // Replace problematic chars inside JSON string values
+    raw = raw
+      .replace(/[\r\n\t]/g, ' ')           // newlines/tabs to space
+      .replace(/\u2018|\u2019/g, '')        // curly single quotes (apostrophes)
+      .replace(/\u201C|\u201D/g, '')        // curly double quotes
+      .replace(/\u2013|\u2014/g, '-')       // em/en dashes
+      .replace(/\u2026/g, '...')            // ellipsis
+      .replace(/[^\x20-\x7E\u00C0-\u024F]/g, ' '); // non-latin chars to space
+
+    // Parse with fallback field-by-field extraction
     let parsed;
     try {
-      parsed = JSON.parse(sanitized);
+      parsed = JSON.parse(raw);
     } catch(e) {
-      // Last resort: try to extract annotations array manually
-      return res.status(500).json({ error: 'JSON parse fout: ' + e.message });
+      // Fallback: extract annotations manually using regex
+      const annotations = [];
+      const annRegex = /"id"\s*:\s*(\d+)[^}]*?"title"\s*:\s*"([^"]*)"[^}]*?"advice"\s*:\s*"([^"]*)"[^}]*?"category"\s*:\s*"([^"]*)"[^}]*?"x"\s*:\s*([\d.]+)[^}]*?"y"\s*:\s*([\d.]+)[^}]*?"arrow_to_x"\s*:\s*([\d.]+)[^}]*?"arrow_to_y"\s*:\s*([\d.]+)/g;
+      let m;
+      while ((m = annRegex.exec(raw)) !== null) {
+        annotations.push({
+          id: parseInt(m[1]),
+          title: m[2],
+          advice: m[3],
+          category: m[4],
+          x: parseFloat(m[5]),
+          y: parseFloat(m[6]),
+          arrow_to_x: parseFloat(m[7]),
+          arrow_to_y: parseFloat(m[8])
+        });
+      }
+      if (annotations.length === 0) {
+        return res.status(500).json({ error: 'Kon aanbevelingen niet verwerken. Probeer opnieuw.' });
+      }
+      parsed = { annotations };
     }
 
     res.status(200).json(parsed);
