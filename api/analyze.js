@@ -14,10 +14,11 @@ export default async function handler(req, res) {
   const finalPrompt = prompt || [
     "Je bent een interieur- en kunstpresentatie-expert.",
     "Analyseer deze foto en geef 5 tot 7 concrete aanbevelingen.",
+    "Begin met een oprecht, specifiek compliment over iets dat al goed werkt in de ruimte.",
     "Kijk breed: kunstpresentatie EN inrichting.",
     "",
     "Geef je antwoord ALLEEN als geldig JSON. Geen markdown, geen apostrof in tekstvelden.",
-    '{"annotations":[{"id":1,"title":"Titel","advice":"Advies","category":"kunst","x":0.45,"y":0.30,"arrow_to_x":0.55,"arrow_to_y":0.25}]}',
+    '{"compliment":"Wat hier al heel goed werkt is...","annotations":[{"id":1,"title":"Titel","advice":"Advies","category":"kunst","x":0.45,"y":0.30,"arrow_to_x":0.55,"arrow_to_y":0.25}]}',
     "",
     "Regels: category is kunst of inrichting. Schrijf in het Nederlands. Retourneer ALLEEN de JSON."
   ].join("\n");
